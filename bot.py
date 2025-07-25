@@ -1,13 +1,13 @@
-from telegram import Update, ReactionTypeEmoji
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+import os
 import random
 import asyncio
+from telegram import Update, ReactionTypeEmoji
+from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
-# Disable all logging
-import logging
-logging.basicConfig(level=logging.CRITICAL)
-for logger_name in ['httpx', 'telegram', 'asyncio']:
-    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+# Configuration
+RENDER_URL = "https://test-bot-1-1c5g.onrender.com"  # Your Render URL
+PORT = 10000  # Render's required port
+REACTION_EMOJIS = ["👍", "❤️", "🔥", "🥰", "👏", "😄", "🎉", "🤩"]
 
 # List of bot tokens
 BOT_TOKENS = [
@@ -34,10 +34,7 @@ BOT_TOKENS = [
     # Add more tokens as needed...
 ]
 
-# Reaction emojis
-REACTION_EMOJIS = ["👍", "❤️", "🔥", "🥰", "👏", "😄", "🎉", "🤩", 
-    "🤔", "😮", "😎", "👀", "🙏",
-    "💯", "🗿", "⚡"]
+
 
 async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -46,26 +43,44 @@ async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
             emoji = random.choice(REACTION_EMOJIS)
             await post.set_reaction([ReactionTypeEmoji(emoji)])
     except:
-        pass  # Silence all errors
+        pass
 
-async def run_bot(bot_token):
-    application = Application.builder().token(bot_token).build()
-    application.add_handler(MessageHandler(
+async def setup_bot(bot_token: str):
+    app = Application.builder().token(bot_token).build()
+    app.add_handler(MessageHandler(
         filters.ChatType.CHANNEL | filters.ChatType.GROUPS,
         auto_react
     ))
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-    while True:
-        await asyncio.sleep(3600)  # Run indefinitely
+    
+    if os.getenv('RENDER'):
+        # Webhook configuration for the primary bot only
+        if bot_token == BOT_TOKENS[0]:  # First bot handles webhook
+            await app.bot.set_webhook(
+                f"{RENDER_URL}/{bot_token}",
+                allowed_updates=["message", "channel_post"]
+            )
+            await app.run_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                url_path=bot_token,
+                webhook_url=f"{RENDER_URL}/{bot_token}"
+            )
+        else:
+            # Secondary bots use polling
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling()
+    else:
+        # Local development - all bots poll
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling()
 
 async def main():
-    tasks = [asyncio.create_task(run_bot(token)) for token in BOT_TOKENS]
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*[setup_bot(token) for token in BOT_TOKENS])
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except:
-        pass  # Silent exit
+    except KeyboardInterrupt:
+        pass
