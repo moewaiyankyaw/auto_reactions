@@ -1,13 +1,25 @@
 import os
 import random
 import asyncio
-from telegram import Update, ReactionTypeEmoji
+from telegram import Update
+from telegram.constants import ReactionEmoji
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 # Configuration
-RENDER_URL = "https://test-bot-1-1c5g.onrender.com"  # Your Render URL
+RENDER_URL = "https://auto-reactions.onrender.com"  # Your Render URL
 PORT = 10000  # Render's required port
-REACTION_EMOJIS = ["👍", "❤️", "🔥", "🥰", "👏", "😄", "🎉", "🤩"]
+
+# Modern emoji constants (PTB v21+)
+REACTION_EMOJIS = [
+    ReactionEmoji.THUMBS_UP,  # 👍
+    ReactionEmoji.RED_HEART,  # ❤️
+    ReactionEmoji.FIRE,       # 🔥
+    ReactionEmoji.SMILING_FACE_WITH_HEARTS,  # 🥰
+    ReactionEmoji.CLAPPING_HANDS,  # 👏
+    ReactionEmoji.GRINNING_FACE,  # 😄
+    ReactionEmoji.PARTY_POPPER,  # 🎉
+    ReactionEmoji.STAR_STRUCK,  # 🤩
+]
 
 # List of bot tokens
 BOT_TOKENS = [
@@ -31,30 +43,29 @@ BOT_TOKENS = [
 "7695761547:AAFq2NQlwESTTn9o0j83MaG9MHszze2scWs",
 "8050489504:AAHT9EuVjJey3aGLmcw5TneLuT9MXf1ih7Q",
 "8149603943:AAHhAO9_t1CH5B-WPuZcqXB51yLaecf1HXg"
-    # Add more tokens as needed...
+    # ... (all your other tokens)
 ]
 
-
-
 async def auto_react(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Automatically react to messages in groups/channels"""
     try:
-        post = update.message or update.channel_post
-        if post and post.chat.type in ["channel", "supergroup", "group"]:
-            emoji = random.choice(REACTION_EMOJIS)
-            await post.set_reaction([ReactionTypeEmoji(emoji)])
-    except:
-        pass
+        message = update.message or update.channel_post
+        if message and message.chat.type in ["group", "supergroup", "channel"]:
+            await message.set_reaction(random.choice(REACTION_EMOJIS))
+    except Exception as e:
+        print(f"Reaction failed: {e}")  # Silent but logged
 
 async def setup_bot(bot_token: str):
+    """Configure and start a bot instance"""
     app = Application.builder().token(bot_token).build()
     app.add_handler(MessageHandler(
-        filters.ChatType.CHANNEL | filters.ChatType.GROUPS,
+        filters.ChatType.GROUPS | filters.ChatType.CHANNELS,
         auto_react
     ))
     
     if os.getenv('RENDER'):
-        # Webhook configuration for the primary bot only
-        if bot_token == BOT_TOKENS[0]:  # First bot handles webhook
+        # Primary bot uses webhooks
+        if bot_token == BOT_TOKENS[0]:
             await app.bot.set_webhook(
                 f"{RENDER_URL}/{bot_token}",
                 allowed_updates=["message", "channel_post"]
@@ -62,8 +73,8 @@ async def setup_bot(bot_token: str):
             await app.run_webhook(
                 listen="0.0.0.0",
                 port=PORT,
-                url_path=bot_token,
-                webhook_url=f"{RENDER_URL}/{bot_token}"
+                webhook_url=f"{RENDER_URL}/{bot_token}",
+                secret_token="your-secret-here"  # Add for security
             )
         else:
             # Secondary bots use polling
@@ -77,10 +88,13 @@ async def setup_bot(bot_token: str):
         await app.updater.start_polling()
 
 async def main():
+    """Launch all bot instances"""
     await asyncio.gather(*[setup_bot(token) for token in BOT_TOKENS])
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        pass
+        print("Bot stopped by user")
+    except Exception as e:
+        print(f"Fatal error: {e}")
